@@ -995,10 +995,14 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     let bytes = latest_release_response.bytes().await?;
     let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
     let response_url = resp.url;
-    let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
+    let latest_release_version = response_url
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
 
-    if is_newer_software_version(latest_release_version, &get_current_software_version()) {
-        set_software_update(response_url, latest_release_version.to_owned());
+    if is_newer_software_version(&latest_release_version, &get_current_software_version()) {
+        set_software_update(response_url, latest_release_version);
     } else {
         clear_software_update();
     }
