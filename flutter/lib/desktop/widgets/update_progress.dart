@@ -9,19 +9,36 @@ import 'package:url_launcher/url_launcher.dart';
 
 final _isExtracting = false.obs;
 
+bool _isDirectDownloadUrl(String url) {
+  final normalized = url.split('?').first.toLowerCase();
+  return normalized.endsWith('.exe') ||
+      normalized.endsWith('.msi') ||
+      normalized.endsWith('.dmg') ||
+      normalized.endsWith('.deb') ||
+      normalized.endsWith('.rpm') ||
+      normalized.endsWith('.pkg') ||
+      normalized.endsWith('.zip');
+}
+
 void handleUpdate(String releasePageUrl) {
   _isExtracting.value = false;
-  String downloadUrl = releasePageUrl.replaceAll('tag', 'download');
-  String version = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
-  final String downloadFile =
-      bind.mainGetCommonSync(key: 'download-file-$version');
-  if (downloadFile.startsWith('error:')) {
-    final error = downloadFile.replaceFirst('error:', '');
-    msgBox(gFFI.sessionId, 'custom-nocancel-nook-hasclose', 'Error', error,
-        releasePageUrl, gFFI.dialogManager);
-    return;
+  String downloadUrl = releasePageUrl;
+  if (!_isDirectDownloadUrl(releasePageUrl)) {
+    downloadUrl = releasePageUrl.replaceAll('tag', 'download');
+    String version = bind.mainGetNewVersion();
+    if (version.isEmpty) {
+      version = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
+    }
+    final String downloadFile =
+        bind.mainGetCommonSync(key: 'download-file-$version');
+    if (downloadFile.startsWith('error:')) {
+      final error = downloadFile.replaceFirst('error:', '');
+      msgBox(gFFI.sessionId, 'custom-nocancel-nook-hasclose', 'Error', error,
+          releasePageUrl, gFFI.dialogManager);
+      return;
+    }
+    downloadUrl = '$downloadUrl/$downloadFile';
   }
-  downloadUrl = '$downloadUrl/$downloadFile';
 
   SimpleWrapper downloadId = SimpleWrapper('');
   SimpleWrapper<VoidCallback> onCanceled = SimpleWrapper(() {});

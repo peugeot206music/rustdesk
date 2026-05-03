@@ -1,0 +1,15 @@
+{
+  "app-name": "InvSecure",
+  "installer-name": "InvSecure",
+  "custom-client-version": "1.4.6.1",
+  "custom-rendezvous-server": "132.226.150.18",
+  "relay-server": "",
+  "api-server": "",
+  "key": "TDD5QyiZ25CT1aCrVkTwUuGQohy5wnmCEQca1vITf5M=",
+  "custom-update-url": "https://appinventario.duckdns.org/inventory/downloads/invsecure-windows-latest.json",
+  "download-public-base-url": "https://appinventario.duckdns.org/inventory/downloads",
+  "download-target-dir": "/var/www/certbot/appinventario-downloads",
+  "default-settings": {
+    "allow-auto-update": "Y"
+  }
+}

@@ -107,6 +107,15 @@ set(RUSTDESK_LIB "../../target/${RUSTDESK_LIB_BUILD_TYPE}/librustdesk.dll")
 install(FILES "${RUSTDESK_LIB}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 COMPONENT Runtime RENAME librustdesk.dll)
 
+foreach(CUSTOM_CLIENT_FILE custom.json custom.txt)
+  set(RUSTDESK_CUSTOM_CLIENT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../../${CUSTOM_CLIENT_FILE}")
+  if(EXISTS "${RUSTDESK_CUSTOM_CLIENT_FILE}")
+    install(FILES "${RUSTDESK_CUSTOM_CLIENT_FILE}"
+      DESTINATION "${CMAKE_INSTALL_PREFIX}"
+      COMPONENT Runtime)
+  endif()
+endforeach()
+
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")

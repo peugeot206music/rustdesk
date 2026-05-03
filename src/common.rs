@@ -41,6 +41,7 @@ use crate::{
     hbbs_http::{create_http_client_async, get_url_for_tls},
     ui_interface::{get_api_server as ui_get_api_server, get_option, is_installed, set_option},
 };
+use url::Url;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum GrabState {
@@ -94,8 +95,12 @@ pub mod input {
 
 lazy_static::lazy_static! {
     pub static ref SOFTWARE_UPDATE_URL: Arc<Mutex<String>> = Default::default();
+    pub static ref SOFTWARE_UPDATE_VERSION: Arc<Mutex<String>> = Default::default();
     pub static ref DEVICE_ID: Arc<Mutex<String>> = Default::default();
     pub static ref DEVICE_NAME: Arc<Mutex<String>> = Default::default();
+    static ref CUSTOM_CLIENT_VERSION: Arc<Mutex<String>> = Default::default();
+    static ref CUSTOM_UPDATE_SOURCE_URL: Arc<Mutex<String>> = Default::default();
+    static ref CUSTOM_UPDATE_VERSION: Arc<Mutex<String>> = Default::default();
     static ref PUBLIC_IPV6_ADDR: Arc<Mutex<(Option<SocketAddr>, Option<Instant>)>> = Default::default();
 }
 
@@ -940,7 +945,7 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
-    if is_custom_client() {
+    if is_custom_client() && !has_custom_software_update() {
         return;
     }
     let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
@@ -953,6 +958,15 @@ pub fn check_software_update() {
 // Because the url is always `https://api.rustdesk.com/version/latest`.
 #[tokio::main(flavor = "current_thread")]
 pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
+    if has_custom_software_update() {
+        if let Some(update) = do_check_custom_software_update().await? {
+            set_software_update(update.url, update.version);
+        } else {
+            clear_software_update();
+        }
+        return Ok(());
+    }
+
     let (request, url) =
         hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_CLIENT.to_string());
     let proxy_conf = Config::get_socks();
@@ -983,21 +997,205 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     let response_url = resp.url;
     let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
 
-    if get_version_number(&latest_release_version) > get_version_number(crate::VERSION) {
-        #[cfg(feature = "flutter")]
-        {
-            let mut m = HashMap::new();
-            m.insert("name", "check_software_update_finish");
-            m.insert("url", &response_url);
-            if let Ok(data) = serde_json::to_string(&m) {
-                let _ = crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, data);
-            }
-        }
-        *SOFTWARE_UPDATE_URL.lock().unwrap() = response_url;
+    if is_newer_software_version(latest_release_version, &get_current_software_version()) {
+        set_software_update(response_url, latest_release_version.to_owned());
     } else {
-        *SOFTWARE_UPDATE_URL.lock().unwrap() = "".to_string();
+        clear_software_update();
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct CustomSoftwareUpdate {
+    version: String,
+    url: String,
+}
+
+pub fn get_current_software_version() -> String {
+    let custom_version = CUSTOM_CLIENT_VERSION.lock().unwrap().clone();
+    if custom_version.is_empty() {
+        crate::VERSION.to_owned()
+    } else {
+        custom_version
+    }
+}
+
+pub fn get_software_update_version() -> String {
+    SOFTWARE_UPDATE_VERSION.lock().unwrap().clone()
+}
+
+pub fn has_custom_software_update() -> bool {
+    !CUSTOM_UPDATE_SOURCE_URL.lock().unwrap().is_empty()
+}
+
+pub fn is_direct_software_update_url(url: &str) -> bool {
+    let url = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    [".exe", ".msi", ".dmg", ".deb", ".rpm", ".pkg", ".zip"]
+        .iter()
+        .any(|ext| url.ends_with(ext))
+}
+
+fn clear_software_update() {
+    *SOFTWARE_UPDATE_URL.lock().unwrap() = String::new();
+    *SOFTWARE_UPDATE_VERSION.lock().unwrap() = String::new();
+}
+
+fn set_software_update(url: String, version: String) {
+    #[cfg(feature = "flutter")]
+    {
+        let mut m = HashMap::new();
+        m.insert("name", "check_software_update_finish");
+        m.insert("url", &url);
+        if let Ok(data) = serde_json::to_string(&m) {
+            let _ = crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, data);
+        }
+    }
+    *SOFTWARE_UPDATE_URL.lock().unwrap() = url;
+    *SOFTWARE_UPDATE_VERSION.lock().unwrap() = version;
+}
+
+fn is_newer_software_version(latest: &str, current: &str) -> bool {
+    if latest.is_empty() {
+        return false;
+    }
+    let latest_number = get_version_number(latest);
+    let current_number = get_version_number(current);
+    latest_number > current_number || (latest_number == current_number && latest != current)
+}
+
+async fn do_check_custom_software_update() -> hbb_common::ResultType<Option<CustomSoftwareUpdate>> {
+    let source_url = CUSTOM_UPDATE_SOURCE_URL.lock().unwrap().clone();
+    if source_url.is_empty() {
+        return Ok(None);
+    }
+
+    let declared_version = CUSTOM_UPDATE_VERSION.lock().unwrap().clone();
+    let update = if is_direct_software_update_url(&source_url) {
+        CustomSoftwareUpdate {
+            version: declared_version,
+            url: source_url,
+        }
+    } else {
+        let bytes = fetch_url_bytes(&source_url).await?;
+        let text = String::from_utf8_lossy(&bytes).trim().to_owned();
+        parse_custom_software_update_manifest(&text, &source_url, &declared_version)?
+    };
+
+    if update.version.is_empty() {
+        log::error!("Custom software update is missing a version.");
+        return Ok(None);
+    }
+
+    if is_newer_software_version(&update.version, &get_current_software_version()) {
+        Ok(Some(update))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn fetch_url_bytes(url: &str) -> hbb_common::ResultType<Bytes> {
+    let proxy_conf = Config::get_socks();
+    let tls_url = get_url_for_tls(url, &proxy_conf);
+    let tls_type = get_cached_tls_type(tls_url);
+    let is_tls_not_cached = tls_type.is_none();
+    let tls_type = tls_type.unwrap_or(TlsType::Rustls);
+    let client = create_http_client_async(tls_type, false);
+    let response = match client.get(url).send().await {
+        Ok(resp) => {
+            upsert_tls_cache(tls_url, tls_type, false);
+            resp
+        }
+        Err(err) => {
+            if is_tls_not_cached && err.is_request() {
+                let tls_type = TlsType::NativeTls;
+                let client = create_http_client_async(tls_type, false);
+                let resp = client.get(url).send().await?;
+                upsert_tls_cache(tls_url, tls_type, false);
+                resp
+            } else {
+                return Err(err.into());
+            }
+        }
+    };
+    Ok(response.bytes().await?)
+}
+
+fn parse_custom_software_update_manifest(
+    text: &str,
+    source_url: &str,
+    declared_version: &str,
+) -> hbb_common::ResultType<CustomSoftwareUpdate> {
+    let data: Value = serde_json::from_str(text)?;
+    let Some(root) = data.as_object() else {
+        bail!("Custom update manifest is not a JSON object");
+    };
+
+    let mut version = get_object_string(root, &["version", "custom-client-version", "build-version"])
+        .unwrap_or_default();
+    let mut url = get_object_string(
+        root,
+        &[
+            "url",
+            "download-url",
+            "download_url",
+            "installer-url",
+            "installer_url",
+            "exe",
+        ],
+    )
+    .unwrap_or_default();
+
+    if let Some(windows) = root.get("windows").and_then(|value| value.as_object()) {
+        if version.is_empty() {
+            version = get_object_string(windows, &["version"]).unwrap_or_default();
+        }
+        if url.is_empty() {
+            url = get_object_string(
+                windows,
+                &[
+                    "url",
+                    "download-url",
+                    "download_url",
+                    "installer-url",
+                    "installer_url",
+                    "exe",
+                ],
+            )
+            .unwrap_or_default();
+        }
+    }
+
+    if version.is_empty() {
+        version = declared_version.to_owned();
+    }
+    if url.is_empty() {
+        bail!("Custom update manifest does not contain a download url");
+    }
+
+    Ok(CustomSoftwareUpdate {
+        version,
+        url: resolve_custom_update_url(source_url, &url),
+    })
+}
+
+fn get_object_string(map: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .filter_map(|key| map.get(*key))
+        .filter_map(|value| value.as_str())
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn resolve_custom_update_url(source_url: &str, url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return url.to_owned();
+    }
+    Url::parse(source_url)
+        .ok()
+        .and_then(|base| base.join(url).ok())
+        .map(|url| url.to_string())
+        .unwrap_or_else(|| url.to_owned())
 }
 
 #[inline]
@@ -2093,6 +2291,15 @@ pub fn load_custom_client() {
     };
     #[cfg(target_os = "macos")]
     let path = path.join("../Resources");
+    let json_path = path.join("custom.json");
+    if json_path.is_file() {
+        let Ok(data) = std::fs::read_to_string(&json_path) else {
+            log::error!("Failed to read custom client json");
+            return;
+        };
+        read_custom_client(&data.trim());
+        return;
+    }
     let path = path.join("custom.txt");
     if path.is_file() {
         let Ok(data) = std::fs::read_to_string(&path) else {
@@ -2180,31 +2387,56 @@ pub fn get_dst_align_rgba() -> usize {
 }
 
 pub fn read_custom_client(config: &str) {
-    let Ok(data) = decode64(config) else {
-        log::error!("Failed to decode custom client config");
-        return;
+    let trimmed = config.trim();
+    let mut data = if trimmed.starts_with('{') {
+        match serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(trimmed)
+        {
+            Ok(data) => data,
+            Err(_) => {
+                log::error!("Failed to parse custom client config");
+                return;
+            }
+        }
+    } else {
+        let Ok(data) = decode64(trimmed) else {
+            log::error!("Failed to decode custom client config");
+            return;
+        };
+        const KEY: &str = "5Qbwsde3unUcJBtrx9ZkvUmwFNoExHzpryHuPUdqlWM=";
+        let Some(pk) = get_rs_pk(KEY) else {
+            log::error!("Failed to parse public key of custom client");
+            return;
+        };
+        let Ok(data) = sign::verify(&data, &pk) else {
+            log::error!("Failed to dec custom client config");
+            return;
+        };
+        match serde_json::from_slice::<std::collections::HashMap<String, serde_json::Value>>(&data)
+        {
+            Ok(data) => data,
+            Err(_) => {
+                log::error!("Failed to parse custom client config");
+                return;
+            }
+        }
     };
-    const KEY: &str = "5Qbwsde3unUcJBtrx9ZkvUmwFNoExHzpryHuPUdqlWM=";
-    let Some(pk) = get_rs_pk(KEY) else {
-        log::error!("Failed to parse public key of custom client");
-        return;
-    };
-    let Ok(data) = sign::verify(&data, &pk) else {
-        log::error!("Failed to dec custom client config");
-        return;
-    };
-    let Ok(mut data) =
-        serde_json::from_slice::<std::collections::HashMap<String, serde_json::Value>>(&data)
-    else {
-        log::error!("Failed to parse custom client config");
-        return;
-    };
+    clear_software_update();
 
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
             *config::APP_NAME.write().unwrap() = app_name.to_owned();
         }
     }
+    *CUSTOM_CLIENT_VERSION.lock().unwrap() = take_custom_string(
+        &mut data,
+        &["custom-client-version", "client-version", "build-version"],
+    );
+    *CUSTOM_UPDATE_SOURCE_URL.lock().unwrap() = take_custom_string(
+        &mut data,
+        &["custom-update-url", "custom-update-manifest-url", "update-url"],
+    );
+    *CUSTOM_UPDATE_VERSION.lock().unwrap() =
+        take_custom_string(&mut data, &["custom-update-version"]);
 
     let mut map_display_settings = HashMap::new();
     for s in keys::KEYS_DISPLAY_SETTINGS {
@@ -2250,6 +2482,19 @@ pub fn read_custom_client(config: &str) {
                 .insert(k, v.to_owned());
         };
     }
+}
+
+fn take_custom_string(data: &mut HashMap<String, serde_json::Value>, keys: &[&str]) -> String {
+    for key in keys {
+        if let Some(value) = data.remove(*key).and_then(|value| value.as_str().map(str::to_owned))
+        {
+            let value = value.trim().to_owned();
+            if !value.is_empty() {
+                return value;
+            }
+        }
+    }
+    String::new()
 }
 
 #[inline]

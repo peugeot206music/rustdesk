@@ -749,18 +749,23 @@ pub fn current_is_wayland() -> bool {
 
 #[inline]
 pub fn get_new_version() -> String {
-    (*SOFTWARE_UPDATE_URL
-        .lock()
-        .unwrap()
-        .rsplit('/')
-        .next()
-        .unwrap_or(""))
-    .to_string()
+    let version = crate::common::get_software_update_version();
+    if version.is_empty() {
+        (*SOFTWARE_UPDATE_URL
+            .lock()
+            .unwrap()
+            .rsplit('/')
+            .next()
+            .unwrap_or(""))
+        .to_string()
+    } else {
+        version
+    }
 }
 
 #[inline]
 pub fn get_version() -> String {
-    crate::VERSION.to_owned()
+    crate::common::get_current_software_version()
 }
 
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]

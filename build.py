@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import pathlib
 import platform
+import re
 import zipfile
 import urllib.request
 import shutil
@@ -24,6 +26,36 @@ else:
     flutter_build_dir = 'build/linux/x64/release/bundle/'
 flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
 skip_cargo = False
+custom_client_config_path = (Path.cwd() / "custom.json").resolve()
+PROJECT_ASSET_TARGETS = {
+    "icon.ico": [
+        "res/icon.ico",
+        "flutter/windows/runner/resources/app_icon.ico",
+        "flutter/assets/icon.ico",
+    ],
+    "app_icon.ico": [
+        "flutter/windows/runner/resources/app_icon.ico",
+    ],
+    "tray-icon.ico": [
+        "res/tray-icon.ico",
+    ],
+    "icon.png": [
+        "res/icon.png",
+        "flutter/assets/icon.png",
+    ],
+    "icon.svg": [
+        "flutter/assets/icon.svg",
+    ],
+    "logo.png": [
+        "flutter/assets/logo.png",
+    ],
+    "client_background.png": [
+        "flutter/assets/client_background.png",
+    ],
+    "mac-icon.png": [
+        "res/mac-icon.png",
+    ],
+}
 
 
 def get_deb_arch() -> str:
@@ -51,6 +83,91 @@ def get_version():
             if line.startswith("version"):
                 return line.replace("version", "").replace("=", "").replace('"', '').strip()
     return ''
+
+
+def set_custom_client_config_path(value: str):
+    global custom_client_config_path
+    custom_client_config_path = Path(value).expanduser().resolve()
+
+
+def get_custom_client_config_path() -> Path:
+    return custom_client_config_path
+
+
+def get_custom_client_config():
+    path = get_custom_client_config_path()
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"warning: failed to read {path}: {exc}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def get_custom_client_bundle_files():
+    config_path = get_custom_client_config_path()
+    candidates = [(config_path, "custom.json")]
+    custom_txt_path = config_path.parent / "custom.txt"
+    if custom_txt_path.is_file():
+        candidates.append((custom_txt_path, "custom.txt"))
+    return candidates
+
+
+def get_custom_client_assets_dir() -> Path:
+    return get_custom_client_config_path().parent / "assets"
+
+
+def apply_project_branding_assets() -> None:
+    assets_dir = get_custom_client_assets_dir()
+    if not assets_dir.is_dir():
+        print(f"custom branding assets dir not found: {assets_dir}")
+        return
+
+    copied = []
+    for source_name, target_paths in PROJECT_ASSET_TARGETS.items():
+        source = assets_dir / source_name
+        if not source.is_file():
+            continue
+        for target_path in target_paths:
+            target = Path.cwd() / target_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            copied.append(f"{source_name} -> {target_path}")
+
+    if copied:
+        print("applied project branding assets:")
+        for item in copied:
+            print(f"  - {item}")
+    else:
+        print(f"no branding assets found in {assets_dir}")
+
+
+def sanitize_output_name(value: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    value = re.sub(r"-{2,}", "-", value).strip("-._")
+    return value or "rustdesk"
+
+
+def get_installer_base_name():
+    config = get_custom_client_config()
+    preferred = config.get("installer-name") or config.get("app-name")
+    if isinstance(preferred, str) and preferred.strip():
+        return sanitize_output_name(preferred)
+    return "rustdesk"
+
+
+def get_installer_output_version(default_version: str) -> str:
+    config = get_custom_client_config()
+    custom_version = (
+        config.get("custom-client-version")
+        or config.get("client-version")
+        or config.get("build-version")
+    )
+    if isinstance(custom_version, str) and custom_version.strip():
+        return custom_version.strip()
+    return default_version
 
 
 def parse_rc_features(feature):
@@ -143,6 +260,11 @@ def make_parser():
     parser.add_argument(
         "--package",
         type=str
+    )
+    parser.add_argument(
+        "--custom-config",
+        type=str,
+        help="Path to the custom client JSON profile to embed in the build."
     )
     if osx:
         parser.add_argument(
@@ -442,12 +564,15 @@ def build_flutter_windows(version, features, skip_portable_pack):
     os.chdir('..')
     shutil.copy2('target/release/deps/dylib_virtual_display.dll',
                  flutter_build_dir_2)
+    for source_path, output_name in get_custom_client_bundle_files():
+        if source_path.is_file():
+            shutil.copy2(source_path, Path(flutter_build_dir_2) / output_name)
     if skip_portable_pack:
         return
     os.chdir('libs/portable')
-    system2('pip3 install -r requirements.txt')
+    system2(f'"{sys.executable}" -m pip install -r requirements.txt')
     system2(
-        f'python3 ./generate.py -f ../../{flutter_build_dir_2} -o . -e ../../{flutter_build_dir_2}/rustdesk.exe')
+        f'"{sys.executable}" ./generate.py -f ../../{flutter_build_dir_2} -o . -e ../../{flutter_build_dir_2}/rustdesk.exe')
     os.chdir('../..')
     if os.path.exists('./rustdesk_portable.exe'):
         os.replace('./target/release/rustdesk-portable-packer.exe',
@@ -457,15 +582,28 @@ def build_flutter_windows(version, features, skip_portable_pack):
                   './rustdesk_portable.exe')
     print(
         f'output location: {os.path.abspath(os.curdir)}/rustdesk_portable.exe')
-    os.rename('./rustdesk_portable.exe', f'./rustdesk-{version}-install.exe')
+    output_version = get_installer_output_version(version)
+    output_name = f'./{get_installer_base_name()}-{output_version}-install.exe'
+    if os.path.exists(output_name):
+        os.replace('./rustdesk_portable.exe', output_name)
+    else:
+        os.rename('./rustdesk_portable.exe', output_name)
     print(
-        f'output location: {os.path.abspath(os.curdir)}/rustdesk-{version}-install.exe')
+        f'output location: {os.path.abspath(output_name)}')
 
 
 def main():
     global skip_cargo
     parser = make_parser()
     args = parser.parse_args()
+
+    if args.custom_config:
+        set_custom_client_config_path(args.custom_config)
+    elif os.environ.get("CUSTOM_CONFIG"):
+        set_custom_client_config_path(os.environ["CUSTOM_CONFIG"])
+
+    print(f'custom client config: {get_custom_client_config_path()}')
+    apply_project_branding_assets()
 
     if os.path.exists(exe_path):
         os.unlink(exe_path)
@@ -475,7 +613,7 @@ def main():
     features = ','.join(get_features(args))
     flutter = args.flutter
     if not flutter:
-        system2('python3 res/inline-sciter.py')
+        system2(f'"{sys.executable}" res/inline-sciter.py')
     print(args.skip_cargo)
     if args.skip_cargo:
         skip_cargo = True
@@ -509,9 +647,9 @@ def main():
         system2(
             f'cp -rf target/release/RustDesk.exe {res_dir}')
         os.chdir('libs/portable')
-        system2('pip3 install -r requirements.txt')
+        system2(f'"{sys.executable}" -m pip install -r requirements.txt')
         system2(
-            f'python3 ./generate.py -f ../../{res_dir} -o . -e ../../{res_dir}/rustdesk-{version}-win7-install.exe')
+            f'"{sys.executable}" ./generate.py -f ../../{res_dir} -o . -e ../../{res_dir}/rustdesk-{version}-win7-install.exe')
         system2('mv ../../{res_dir}/rustdesk-{version}-win7-install.exe ../..')
     elif os.path.isfile('/usr/bin/pacman'):
         # pacman -S -needed base-devel

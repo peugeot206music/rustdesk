@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
@@ -427,8 +428,48 @@ class LoginWidgetUserPass extends StatelessWidget {
 
 const kAuthReqTypeOidc = 'oidc/';
 
+Future<String> customClientLoginUrl() async {
+  if (!bind.isCustomClient()) {
+    return '';
+  }
+  final hardcodedUrl = bind.mainGetHardOption(key: 'custom-login-url').trim();
+  if (hardcodedUrl.isNotEmpty) {
+    return hardcodedUrl;
+  }
+  return (await bind.mainGetApiServer()).trim();
+}
+
+Future<bool> openCustomClientLoginPortal() async {
+  final url = await customClientLoginUrl();
+  if (url.isEmpty) {
+    return false;
+  }
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+    BotToast.showText(
+      contentColor: Colors.red,
+      text: 'Invalid custom login url',
+    );
+    return true;
+  }
+  final launched = await launchUrl(
+    uri,
+    mode: isWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
+  );
+  if (!launched) {
+    BotToast.showText(
+      contentColor: Colors.red,
+      text: 'Failed to open custom login page',
+    );
+  }
+  return true;
+}
+
 // call this directly
 Future<bool?> loginDialog() async {
+  if (await openCustomClientLoginPortal()) {
+    return null;
+  }
   var username =
       TextEditingController(text: UserModel.getLocalUserInfo()?['name'] ?? '');
   var password = TextEditingController();

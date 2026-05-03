@@ -1,0 +1,17 @@
+{
+  "app-name": "MyAnyRust",
+  "installer-name": "MyAnyRust",
+  "custom-client-version": "1.4.6.1",
+  "custom-rendezvous-server": "132.226.150.18",
+  "relay-server": "",
+  "api-server": "https://myanyrust.duckdns.org",
+  "custom-login-url": "https://myanyrust.duckdns.org/",
+  "key": "TDD5QyiZ25CT1aCrVkTwUuGQohy5wnmCEQca1vITf5M=",
+  "custom-update-url": "https://myanyrust.duckdns.org/downloads/myanyrust-windows-latest.json",
+  "download-public-base-url": "https://myanyrust.duckdns.org/downloads",
+  "download-target-dir": "/var/www/certbot/myanyrust-downloads",
+  "default-settings": {
+    "allow-auto-update": "Y",
+    "disable-group-panel": "Y"
+  }
+}

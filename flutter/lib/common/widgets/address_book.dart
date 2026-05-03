@@ -39,11 +39,13 @@ class _AddressBookState extends State<AddressBook> {
 
   @override
   Widget build(BuildContext context) => Obx(() {
-        if (!gFFI.userModel.isLogin) {
+        final useLocalAddressBook = shouldUseLocalAddressBook();
+        if (!useLocalAddressBook && !gFFI.userModel.isLogin) {
           return Center(
               child: ElevatedButton(
                   onPressed: loginDialog, child: Text(translate("Login"))));
-        } else if (gFFI.userModel.networkError.isNotEmpty) {
+        } else if (!useLocalAddressBook &&
+            gFFI.userModel.networkError.isNotEmpty) {
           return netWorkErrorWidget();
         } else {
           return Column(

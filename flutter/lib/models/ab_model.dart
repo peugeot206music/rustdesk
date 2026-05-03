@@ -29,6 +29,12 @@ bool filterAbTagByIntersection() {
   return bind.mainGetLocalOption(key: filterAbTagOption) == 'Y';
 }
 
+final localAddressBookOption = 'local-address-book';
+bool shouldUseLocalAddressBook() {
+  return bind.isCustomClient() ||
+      bind.mainGetLocalOption(key: localAddressBookOption) == 'Y';
+}
+
 const _personalAddressBookName = "My address book";
 const _legacyAddressBookName = "Legacy address book";
 
@@ -143,6 +149,27 @@ class AbModel {
       {required ForcePullAb? force, required bool quiet}) async {
     if (force == null && listInitialized && current.initialized) return;
     debugPrint("pullAb, force: $force, quiet: $quiet");
+    if (shouldUseLocalAddressBook()) {
+      legacyMode.value = true;
+      _personalAbGuid = null;
+      addressbooks.removeWhere((key, value) => key != _legacyAddressBookName);
+      if (!addressbooks.containsKey(_legacyAddressBookName)) {
+        addressbooks[_legacyAddressBookName] = LegacyAb();
+      }
+      if (!listInitialized) {
+        listInitialized = true;
+        trySetCurrentToLast();
+      }
+      if (!addressbooks.containsKey(_currentName.value)) {
+        _currentName.value = _legacyAddressBookName;
+      }
+      await current.pullAb(quiet: quiet);
+      _callbackPeerUpdate();
+      if (listInitialized && current.initialized) {
+        _saveCache();
+      }
+      return;
+    }
     if (!listInitialized || force == ForcePullAb.listAndCurrent) {
       try {
         // Read personal guid every time to avoid upgrading the server without closing the main window
@@ -1006,6 +1033,57 @@ class LegacyAb extends BaseAb {
 
   @override
   Future<bool> pullAbImpl({quiet = false}) async {
+    if (shouldUseLocalAddressBook()) {
+      try {
+        final cache = await bind.mainLoadAb();
+        if (cache.isEmpty) {
+          tags.clear();
+          tagColors.clear();
+          peers.clear();
+          return true;
+        }
+        final data = jsonDecode(cache);
+        if (data is Map<String, dynamic> && data['ab_entries'] is List) {
+          final entries = data['ab_entries'] as List;
+          if (entries.isEmpty) {
+            tags.clear();
+            tagColors.clear();
+            peers.clear();
+            return true;
+          }
+          final entry = entries.first;
+          if (entry is Map<String, dynamic>) {
+            tags.clear();
+            tagColors.clear();
+            peers.clear();
+            if (entry['tags'] is List) {
+              tags.value =
+                  (entry['tags'] as List).map((e) => e.toString()).toList();
+            }
+            if (entry['peers'] is List) {
+              for (final peer in entry['peers']) {
+                if (peer is Map<String, dynamic>) {
+                  peers.add(Peer.fromJson(peer));
+                }
+              }
+            }
+            if (entry['tag_colors'] is String) {
+              final raw = jsonDecode(entry['tag_colors']);
+              if (raw is Map) {
+                tagColors.value = Map<String, int>.from(raw);
+              }
+            }
+          }
+        }
+        return true;
+      } catch (err) {
+        if (!quiet) {
+          pullError.value =
+              '${translate('pull_ab_failed_tip')}: ${translate(err.toString())}';
+        }
+        return false;
+      }
+    }
     bool ret = false;
     final api = "${await bind.mainGetApiServer()}/api/ab";
     int? statusCode;
@@ -1055,6 +1133,37 @@ class LegacyAb extends BaseAb {
   Future<bool> pushAb(
       {bool toastIfFail = true, bool toastIfSucc = true}) async {
     debugPrint("pushAb: toastIfFail:$toastIfFail, toastIfSucc:$toastIfSucc");
+    if (shouldUseLocalAddressBook()) {
+      try {
+        peers.refresh();
+        final payload = {
+          "access_token": "",
+          "ab_entries": [
+            {
+              "guid": "",
+              "name": name(),
+              "peers": peers
+                  .map((e) => e.toCustomJson(includingHash: true))
+                  .toList(),
+              "tags": tags.toList(),
+              "tag_colors": jsonEncode(tagColors),
+            }
+          ],
+        };
+        await bind.mainSaveAb(json: jsonEncode(payload));
+        if (toastIfSucc) {
+          showToast(translate('Successful'));
+        }
+        return true;
+      } catch (e) {
+        pushError.value =
+            '${translate('push_ab_failed_tip')}: ${translate(e.toString())}';
+        if (toastIfFail) {
+          BotToast.showText(contentColor: Colors.red, text: pushError.value);
+        }
+        return false;
+      }
+    }
     if (!gFFI.userModel.isLogin) return false;
     pushError.value = '';
     bool ret = false;

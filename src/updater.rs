@@ -132,18 +132,30 @@ fn check_update(manually: bool) -> ResultType<()> {
     if update_url.is_empty() {
         log::debug!("No update available.");
     } else {
-        let download_url = update_url.replace("tag", "download");
-        let version = download_url.split('/').last().unwrap_or_default();
-        #[cfg(target_os = "windows")]
-        let download_url = if cfg!(feature = "flutter") {
-            format!(
-                "{}/rustdesk-{}-x86_64.{}",
-                download_url,
-                version,
-                if update_msi { "msi" } else { "exe" }
-            )
+        let mut version = crate::common::get_software_update_version();
+        if version.is_empty() {
+            version = update_url
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+        }
+        let download_url = if crate::common::is_direct_software_update_url(&update_url) {
+            update_url.clone()
         } else {
-            format!("{}/rustdesk-{}-x86-sciter.exe", download_url, version)
+            let download_url = update_url.replace("tag", "download");
+            #[cfg(target_os = "windows")]
+            let download_url = if cfg!(feature = "flutter") {
+                format!(
+                    "{}/rustdesk-{}-x86_64.{}",
+                    download_url,
+                    version,
+                    if update_msi { "msi" } else { "exe" }
+                )
+            } else {
+                format!("{}/rustdesk-{}-x86-sciter.exe", download_url, version)
+            };
+            download_url
         };
         log::debug!("New version available: {}", &version);
         let client = create_http_client_with_url(&download_url);

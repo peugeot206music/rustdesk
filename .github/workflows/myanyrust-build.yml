@@ -1,0 +1,170 @@
+name: Build MyAnyRust Client (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: "Publicar tambien en GitHub Release"
+        required: false
+        default: "false"
+      release_tag:
+        description: "Tag del release cuando upload_release=true"
+        required: false
+        default: "myanyrust-latest"
+  push:
+    paths:
+      - "build.py"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "libs/**"
+      - "flutter/**"
+      - "res/**"
+      - "projects/myanyrust/**"
+      - ".github/workflows/myanyrust-build.yml"
+      - ".github/workflows/bridge.yml"
+      - ".github/patches/**"
+
+env:
+  PROJECT_CONFIG: "projects/myanyrust/custom.json"
+  FLUTTER_VERSION: "3.24.5"
+  RUST_VERSION: "1.75"
+  LLVM_VERSION: "15.0.6"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_TRIPLET: "x64-windows-static"
+  TARGET: "x86_64-pc-windows-msvc"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+
+  build-myanyrust-windows:
+    name: Build MyAnyRust Windows
+    needs: generate-bridge
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Export cache env
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2.12.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Replace engine with RustDesk custom Flutter engine
+        shell: pwsh
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          Move-Item -Force windows-x64-release/* "C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/"
+
+      - name: Patch Flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff "$(dirname "$(dirname "$(which flutter)")")"
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          [[ "${{ env.FLUTTER_VERSION }}" == "3.24.5" ]] && git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ env.TARGET }}
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: myanyrust-windows
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: ${{ env.VCPKG_TRIPLET }}
+        shell: bash
+        run: |
+          if ! "$VCPKG_ROOT"/vcpkg install --triplet "${{ env.VCPKG_TRIPLET }}" --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r file; do
+              echo "$file:"
+              echo "======"
+              cat "$file"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+
+      - name: Build MyAnyRust custom client
+        shell: pwsh
+        run: |
+          python .\build.py --portable --hwcodec --flutter --vram --custom-config ${{ env.PROJECT_CONFIG }}
+
+      - name: Prepare outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path output | Out-Null
+          $installer = Get-ChildItem -Path . -Filter "MyAnyRust-*-install.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($null -eq $installer) {
+            Write-Error "No encontre el instalador MyAnyRust-*-install.exe"
+            exit 1
+          }
+          Copy-Item $installer.FullName -Destination output\
+          Compress-Archive -Path .\flutter\build\windows\x64\runner\Release\* -DestinationPath .\output\MyAnyRust-windows-bundle.zip -Force
+          Copy-Item .\${{ env.PROJECT_CONFIG }} .\output\myanyrust-custom.json
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: myanyrust-client-windows
+          path: |
+            output/*.exe
+            output/*.zip
+            output/*.json
+
+      - name: Publish release
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_release == 'true' }}
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.event.inputs.release_tag }}
+          name: MyAnyRust Client
+          artifacts: "output/*.exe,output/*.zip,output/*.json"
+          allowUpdates: true
+          replacesArtifacts: true

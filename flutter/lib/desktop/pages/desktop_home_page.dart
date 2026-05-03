@@ -61,12 +61,21 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
     return _buildBlock(
-        child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
       children: [
-        buildLeftPane(context),
-        if (!isIncomingOnly) const VerticalDivider(width: 1),
-        if (!isIncomingOnly) Expanded(child: buildRightPane(context)),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: _buildClientBackground(),
+          ),
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            buildLeftPane(context),
+            if (!isIncomingOnly) const VerticalDivider(width: 1),
+            if (!isIncomingOnly) Expanded(child: buildRightPane(context)),
+          ],
+        ),
       ],
     ));
   }
@@ -74,6 +83,25 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget _buildBlock({required Widget child}) {
     return buildRemoteBlock(
         block: _block, mask: true, use: canBeBlocked, child: child);
+  }
+
+  Widget _buildClientBackground() {
+    return FutureBuilder<ByteData>(
+      future: rootBundle.load('assets/client_background.png'),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Offstage();
+        }
+        return Opacity(
+          opacity: 0.12,
+          child: Image.asset(
+            'assets/client_background.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.centerRight,
+          ),
+        );
+      },
+    );
   }
 
   Widget buildLeftPane(BuildContext context) {
@@ -430,14 +458,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Widget buildHelpCards(String updateUrl) {
-    if (!bind.isCustomClient() &&
-        updateUrl.isNotEmpty &&
-        !isCardClosed &&
-        bind.mainUriPrefixSync().contains('rustdesk')) {
+    if (updateUrl.isNotEmpty && !isCardClosed) {
       final isToUpdate = (isWindows || isMacOS) && bind.mainIsInstalled();
       String btnText = isToUpdate ? 'Update' : 'Download';
+      final isCustomClient = bind.isCustomClient();
       GestureTapCallback onPressed = () async {
-        final Uri url = Uri.parse('https://rustdesk.com/download');
+        final Uri url = Uri.parse(
+            isCustomClient ? updateUrl : 'https://rustdesk.com/download');
         await launchUrl(url);
       };
       if (isToUpdate) {
@@ -451,8 +478,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           btnText,
           onPressed,
           closeButton: true,
-          help: isToUpdate ? 'Changelog' : null,
-          link: isToUpdate
+          help: !isCustomClient && isToUpdate ? 'Changelog' : null,
+          link: !isCustomClient && isToUpdate
               ? 'https://github.com/rustdesk/rustdesk/releases/tag/${bind.mainGetNewVersion()}'
               : null);
     }
