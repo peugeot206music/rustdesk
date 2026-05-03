@@ -31,8 +31,7 @@ bool filterAbTagByIntersection() {
 
 final localAddressBookOption = 'local-address-book';
 bool shouldUseLocalAddressBook() {
-  return bind.isCustomClient() ||
-      bind.mainGetLocalOption(key: localAddressBookOption) == 'Y';
+  return bind.mainGetLocalOption(key: localAddressBookOption) == 'Y';
 }
 
 const _personalAddressBookName = "My address book";

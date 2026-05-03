@@ -467,9 +467,9 @@ Future<bool> openCustomClientLoginPortal() async {
 
 // call this directly
 Future<bool?> loginDialog() async {
-  if (await openCustomClientLoginPortal()) {
-    return null;
-  }
+  // Keep authentication inside the desktop client. The custom portal is still
+  // useful as a web dashboard, but opening it here cannot pass the token back
+  // into the native client.
   var username =
       TextEditingController(text: UserModel.getLocalUserInfo()?['name'] ?? '');
   var password = TextEditingController();
