@@ -141,14 +141,20 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path output | Out-Null
-          $installer = Get-ChildItem -Path . -Filter "MyAnyRust-*-install.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $profile = Get-Content .\${{ env.PROJECT_CONFIG }} | ConvertFrom-Json
+          $profileBase = if ($profile.'installer-name') { $profile.'installer-name' } elseif ($profile.'app-name') { $profile.'app-name' } else { 'custom-client' }
+          $profileSlug = ($profileBase -replace '[^A-Za-z0-9._-]+', '-').Trim('-', '.', '_')
+          if ([string]::IsNullOrWhiteSpace($profileSlug)) {
+            $profileSlug = 'custom-client'
+          }
+          $installer = Get-ChildItem -Path . -Filter "$profileSlug-*-install.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if ($null -eq $installer) {
-            Write-Error "No encontre el instalador MyAnyRust-*-install.exe"
+            Write-Error "No encontre el instalador $profileSlug-*-install.exe"
             exit 1
           }
           Copy-Item $installer.FullName -Destination output\
-          Compress-Archive -Path .\flutter\build\windows\x64\runner\Release\* -DestinationPath .\output\MyAnyRust-windows-bundle.zip -Force
-          Copy-Item .\${{ env.PROJECT_CONFIG }} .\output\myanyrust-custom.json
+          Compress-Archive -Path .\flutter\build\windows\x64\runner\Release\* -DestinationPath ".\output\$profileSlug-windows-bundle.zip" -Force
+          Copy-Item .\${{ env.PROJECT_CONFIG }} ".\output\$($profileSlug.ToLower())-custom.json"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
