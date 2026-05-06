@@ -178,6 +178,7 @@ class UserModel {
   Future<LoginResponse> login(LoginRequest loginRequest) async {
     final url = await bind.mainGetApiServer();
     final resp = await http.post(Uri.parse('$url/api/login'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode(loginRequest.toJson()));
 
     final Map<String, dynamic> body;

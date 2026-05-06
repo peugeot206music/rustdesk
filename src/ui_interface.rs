@@ -177,6 +177,18 @@ pub fn get_option<T: AsRef<str>>(key: T) -> String {
 }
 
 #[inline]
+fn get_hard_option_or_option(key: &str) -> String {
+    #[cfg(feature = "flutter")]
+    {
+        let hard = get_hard_option(key.to_owned());
+        if !hard.is_empty() {
+            return hard;
+        }
+    }
+    get_option(key)
+}
+
+#[inline]
 pub fn use_texture_render() -> bool {
     #[cfg(target_os = "android")]
     return false;
@@ -1021,8 +1033,8 @@ pub fn video_save_directory(root: bool) -> String {
 #[inline]
 pub fn get_api_server() -> String {
     crate::get_api_server(
-        get_option("api-server"),
-        get_option("custom-rendezvous-server"),
+        get_hard_option_or_option("api-server"),
+        get_hard_option_or_option("custom-rendezvous-server"),
     )
 }
 

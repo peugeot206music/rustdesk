@@ -1357,8 +1357,8 @@ pub fn rename_exe_cmd(src_exe: &str, path: &str) -> ResultType<String> {
         .ok_or(anyhow!("Can't get file name of {src_exe}"))?
         .to_string_lossy()
         .to_string();
-    let app_name = crate::get_app_name().to_lowercase();
-    if src_exe_filename.to_lowercase() == format!("{app_name}.exe") {
+    let app_name = crate::get_app_name();
+    if src_exe_filename.to_lowercase() == format!("{}.exe", app_name.to_lowercase()) {
         Ok("".to_owned())
     } else {
         Ok(format!(
@@ -1632,7 +1632,11 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
         ),
         sleep = if debug { "timeout 300" } else { "" },
         dels = if debug { "" } else { &dels },
-        copy_exe = copy_exe_cmd(&src_exe, &exe, &path)?,
+        copy_exe = format!(
+            "{}{}",
+            copy_exe_cmd(&src_exe, &exe, &path)?,
+            rename_exe_cmd(&src_exe, &path)?
+        ),
         import_config = get_import_config(&exe),
     );
     run_cmds(cmds, debug, "install")?;

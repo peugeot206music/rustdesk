@@ -86,21 +86,45 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Widget _buildClientBackground() {
-    return FutureBuilder<ByteData>(
-      future: rootBundle.load('assets/client_background.png'),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Offstage();
-        }
-        return Opacity(
-          opacity: 0.12,
-          child: Image.asset(
-            'assets/client_background.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.centerRight,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FutureBuilder<ByteData>(
+          future: rootBundle.load('assets/client_background.png'),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Offstage();
+            }
+            return Opacity(
+              opacity: 0.22,
+              child: Image.asset(
+                'assets/client_background.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.centerRight,
+              ),
+            );
+          },
+        ),
+        if (bind.isCustomClient())
+          Center(
+            child: FutureBuilder<ByteData>(
+              future: rootBundle.load('assets/logo.png'),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Offstage();
+                }
+                return Opacity(
+                  opacity: 0.14,
+                  child: Image.asset(
+                    'assets/logo.png',
+                    width: 360,
+                    fit: BoxFit.contain,
+                  ),
+                );
+              },
+            ),
           ),
-        );
-      },
+      ],
     );
   }
 
