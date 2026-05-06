@@ -12,9 +12,14 @@
   "download-target-dir": "/var/www/certbot/myanyrust-downloads",
   "default-settings": {
     "allow-auto-update": "Y",
-    "disable-group-panel": "Y",
-    "local-address-book": "N",
+    "local-address-book": "Y",
     "sync-ab-with-recent-sessions": "Y",
-    "sync-ab-tags": "Y"
+    "sync-ab-tags": "Y",
+    "disable-group-panel": "Y",
+    "disable-discovery-panel": "N",
+    "disable-settings": "Y",
+    "disable-ab": "N",
+    "disable-account": "N",
+    "disable-installation": "N"
   }
 }
