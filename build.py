@@ -144,6 +144,34 @@ def apply_project_branding_assets() -> None:
         print(f"no branding assets found in {assets_dir}")
 
 
+def update_windows_runner_metadata() -> None:
+    config = get_custom_client_config()
+    app_name = config.get("app-name") or config.get("installer-name")
+    if not isinstance(app_name, str) or not app_name.strip():
+        return
+    app_name = app_name.strip()
+    rc_path = Path("flutter/windows/runner/Runner.rc")
+    if not rc_path.is_file():
+        return
+    content = rc_path.read_text(encoding="utf-8")
+    replacements = {
+        "FileDescription": f"{app_name} Remote Desktop",
+        "InternalName": app_name.lower(),
+        "OriginalFilename": f"{sanitize_output_name(app_name)}.exe",
+        "ProductName": app_name,
+    }
+
+    def replace_value(match):
+        key = match.group(1)
+        return f'VALUE "{key}", "{replacements[key]}" "\\0"'
+
+    pattern = r'VALUE "(FileDescription|InternalName|OriginalFilename|ProductName)", ".*?" "\\0"'
+    updated = re.sub(pattern, replace_value, content)
+    if updated != content:
+        rc_path.write_text(updated, encoding="utf-8")
+        print(f"updated Windows metadata title/product to {app_name}")
+
+
 def sanitize_output_name(value: str) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
     value = re.sub(r"-{2,}", "-", value).strip("-._")
@@ -604,6 +632,8 @@ def main():
 
     print(f'custom client config: {get_custom_client_config_path()}')
     apply_project_branding_assets()
+    if windows:
+        update_windows_runner_metadata()
 
     if os.path.exists(exe_path):
         os.unlink(exe_path)

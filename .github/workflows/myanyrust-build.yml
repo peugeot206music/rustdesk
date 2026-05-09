@@ -154,7 +154,6 @@ jobs:
           }
           Copy-Item $installer.FullName -Destination output\
           Compress-Archive -Path .\flutter\build\windows\x64\runner\Release\* -DestinationPath ".\output\$profileSlug-windows-bundle.zip" -Force
-          Copy-Item .\${{ env.PROJECT_CONFIG }} ".\output\$($profileSlug.ToLower())-custom.json"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -163,7 +162,6 @@ jobs:
           path: |
             output/*.exe
             output/*.zip
-            output/*.json
 
       - name: Publish release
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload_release == 'true' }}
@@ -171,6 +169,6 @@ jobs:
         with:
           tag: ${{ github.event.inputs.release_tag }}
           name: MyAnyRust Client
-          artifacts: "output/*.exe,output/*.zip,output/*.json"
+          artifacts: "output/*.exe,output/*.zip"
           allowUpdates: true
           replacesArtifacts: true
