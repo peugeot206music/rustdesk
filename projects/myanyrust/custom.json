@@ -12,7 +12,7 @@
   "download-target-dir": "/var/www/certbot/myanyrust-downloads",
   "default-settings": {
     "allow-auto-update": "Y",
-    "local-address-book": "Y",
+    "local-address-book": "N",
     "sync-ab-with-recent-sessions": "Y",
     "sync-ab-tags": "Y",
     "enable-hwcodec": "Y",
