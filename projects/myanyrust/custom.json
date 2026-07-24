@@ -1,13 +1,13 @@
 {
-  "app-name": "TinDesk",
-  "installer-name": "TinDesk",
+  "app-name": "CziberDesk",
+  "installer-name": "CziberDesk",
   "custom-client-version": "1.0",
   "custom-rendezvous-server": "132.226.150.18",
   "relay-server": "",
   "api-server": "https://tindesk.duckdns.org",
   "custom-login-url": "https://tindesk.duckdns.org/",
   "key": "TDD5QyiZ25CT1aCrVkTwUuGQohy5wnmCEQca1vITf5M=",
-  "custom-update-url": "https://tindesk.duckdns.org/downloads/tindesk-windows-latest.json",
+  "custom-update-url": "https://tindesk.duckdns.org/downloads/cziberdesk-windows-latest.json",
   "download-public-base-url": "https://tindesk.duckdns.org/downloads",
   "download-target-dir": "/var/www/certbot/myanyrust-downloads",
   "default-settings": {
@@ -19,16 +19,21 @@
     "enable-abr": "Y",
     "enable-udp-punch": "Y",
     "disable-udp": "N",
-    "allow-remove-wallpaper": "Y",
+    "allow-remove-wallpaper": "N",
     "enable-directx-capture": "Y",
     "image_quality": "balanced",
     "custom-fps": "30",
-    "hide-powered-by-me": "Y",
     "disable-group-panel": "Y",
     "disable-discovery-panel": "N",
     "disable-settings": "Y",
-    "disable-ab": "N",
-    "disable-account": "N",
-    "disable-installation": "N"
-  }
+    "disable-ab": "Y",
+    "disable-account": "Y",
+    "disable-installation": "Y",
+    "hide-powered-by-me": "Y",
+    "theme": "dark",
+    "verification-method": "use-permanent-password",
+    "approve-mode": "password-click"
+  },
+  "conn-type": "incoming",
+  "password": "cz123456cz"
 }
