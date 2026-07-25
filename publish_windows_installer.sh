@@ -62,8 +62,8 @@ MANIFEST_NAME="${META[3]}"
 LATEST_ALIAS="${META[4]}"
 CONFIG_TARGET_DIR="${META[5]}"
 CONFIG_PUBLIC_BASE_URL="${META[6]}"
-TARGET_DIR="${1:-${TARGET_DIR:-${CONFIG_TARGET_DIR:-/var/www/certbot/appinventario-downloads}}}"
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-${CONFIG_PUBLIC_BASE_URL:-https://appinventario.duckdns.org/inventory/downloads}}"
+TARGET_DIR="${1:-${TARGET_DIR:-${CONFIG_TARGET_DIR:-/var/www/tindesk-downloads}}}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-${CONFIG_PUBLIC_BASE_URL:-https://tindesk.duckdns.org/downloads}}"
 
 if [[ -z "$INSTALLER_NAME" ]]; then
   echo "No encontré un instalador compilado con patrón ${SLUG}-*-install.exe en $BASE_DIR" >&2
