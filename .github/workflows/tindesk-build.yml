@@ -47,32 +47,34 @@ jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
+  # Decide que perfiles compilar
+  select-profiles:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'all' }}"
+          if [[ "$PROFILE" == "all" ]]; then
+            echo 'matrix={"profile":[{"id":"tindesk","name":"TinDesk Full","config":"projects/project/custom.json","artifact":"tindesk-client-windows"},{"id":"tindesk-soporte","name":"TinDesk Soporte","config":"projects/tindesk-soporte/custom.json","artifact":"tindesk-soporte-client-windows"},{"id":"cziberdesk","name":"CziberDesk","config":"projects/myanyrust/custom.json","artifact":"cziberdesk-client-windows"}]}' >> "$GITHUB_OUTPUT"
+          elif [[ "$PROFILE" == "tindesk" ]]; then
+            echo 'matrix={"profile":[{"id":"tindesk","name":"TinDesk Full","config":"projects/project/custom.json","artifact":"tindesk-client-windows"}]}' >> "$GITHUB_OUTPUT"
+          elif [[ "$PROFILE" == "tindesk-soporte" ]]; then
+            echo 'matrix={"profile":[{"id":"tindesk-soporte","name":"TinDesk Soporte","config":"projects/tindesk-soporte/custom.json","artifact":"tindesk-soporte-client-windows"}]}' >> "$GITHUB_OUTPUT"
+          elif [[ "$PROFILE" == "cziberdesk" ]]; then
+            echo 'matrix={"profile":[{"id":"cziberdesk","name":"CziberDesk","config":"projects/myanyrust/custom.json","artifact":"cziberdesk-client-windows"}]}' >> "$GITHUB_OUTPUT"
+          fi
+
   build-client:
     name: Build ${{ matrix.profile.name }}
-    needs: generate-bridge
+    needs: [generate-bridge, select-profiles]
     runs-on: windows-2022
     permissions:
       contents: write
-    if: >-
-      github.event_name == 'push' ||
-      github.event.inputs.profile == 'all' ||
-      github.event.inputs.profile == matrix.profile.id
     strategy:
       fail-fast: false
-      matrix:
-        profile:
-          - id: tindesk
-            name: TinDesk Full
-            config: projects/project/custom.json
-            artifact: tindesk-client-windows
-          - id: tindesk-soporte
-            name: TinDesk Soporte
-            config: projects/tindesk-soporte/custom.json
-            artifact: tindesk-soporte-client-windows
-          - id: cziberdesk
-            name: CziberDesk
-            config: projects/myanyrust/custom.json
-            artifact: cziberdesk-client-windows
+      matrix: ${{ fromJSON(needs.select-profiles.outputs.matrix) }}
 
     steps:
       - name: Export cache env
