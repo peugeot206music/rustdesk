@@ -10,8 +10,6 @@
   "custom-update-url": "https://tindesk.duckdns.org/downloads/tindesk-soporte-windows-latest.json",
   "download-public-base-url": "https://tindesk.duckdns.org/downloads",
   "download-target-dir": "/var/www/tindesk-downloads",
-  "conn-type": "incoming",
-  "password": "CambiameAhora123",
   "default-settings": {
     "allow-auto-update": "Y",
     "local-address-book": "N",
@@ -35,5 +33,7 @@
     "theme": "light",
     "verification-method": "use-permanent-password",
     "approve-mode": "password"
-  }
+  },
+  "conn-type": "incoming",
+  "password": "CambiameAhora123"
 }
